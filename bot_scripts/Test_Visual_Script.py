@@ -4,6 +4,7 @@ from telebot import types
 
 TOKEN = '6534454602:AAH7IlOdqFzRtXAZ2wffIOFpHYFTWdb7-1A'
 
+
 bot = telebot.TeleBot(TOKEN)
 user_balance = {'user_id': 0}
 user_data = {}
