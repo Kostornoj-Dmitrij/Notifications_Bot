@@ -1,9 +1,10 @@
 import telebot
+import pyodbc
 from telebot import types
-
+import requests
 
 TOKEN = '6534454602:AAH7IlOdqFzRtXAZ2wffIOFpHYFTWdb7-1A'
-
+YOOTOKEN = '381764678:TEST:83858'
 
 bot = telebot.TeleBot(TOKEN)
 user_balance = {'user_id': 0}
@@ -15,12 +16,33 @@ current_message_number = 1
 output_format = None
 images_folder = 'D:/Scanner/images'
 
+conn = pyodbc.connect(
+    'driver={ODBC Driver 18 for SQL Server};'
+    'Server=DESKTOP-BIV7UD0\SQLEXPRESS01;'
+    'Database=notifications;'
+    'Trusted_Connection=yes;'
+    'Encrypt=optional;'
+)
+
+
+cursor = conn.cursor()
+
+
+
 
 @bot.message_handler(commands=['start'])
 def start(message):
     user_id = message.chat.id
-    if user_id not in user_balance:
+    username = message.chat.username
+    cursor.execute('''SELECT * FROM Users WHERE username=?''', username)
+    result = cursor.fetchone()
+
+    if not result:
         user_balance[user_id] = float(1000)
+        cursor.execute('''INSERT INTO Users (username, t_user_chat_id, balance) VALUES (?, ?, ?)''', username, user_id, user_balance[user_id])
+        conn.commit()
+    else:
+        user_balance[user_id] = result[3]
 
     keyboard = types.InlineKeyboardMarkup()
 
@@ -116,21 +138,23 @@ def show_chats_info(user_id):
                  types.InlineKeyboardButton('Удалить чат', callback_data='deleteChat'))
     bot.send_message(user_id, "Включенных в мониторинг чатов - ...", reply_markup=keyboard)
 
-
 @bot.callback_query_handler(func=lambda call: True)
 def callback_inline(call):
     user_id = call.message.chat.id
     if call.data in ['100', '300', '500', '1000', '1500', '2000']:
-        message = call.message
-        user_id = message.chat.id
-        user_balance[user_id] = round(user_balance[user_id] + float(call.data), 2)
-        bot.send_message(user_id, 'Вы пополнили баланс на {} руб.!'.format(call.data))
-        show_profile(user_id)
+        prices = [types.LabeledPrice(label='Руб', amount = int(call.data)*100)]
+
+        bot.send_invoice(call.message.chat.id, title='Пополнение баланса',
+                         description='payment', invoice_payload='pay_add',
+                         provider_token=YOOTOKEN, currency='RUB',
+                         start_parameter='test_bot', prices=prices)
     elif call.data in ['sub_100', 'sub_300', 'sub_450', 'sub_750', 'sub_0', 'other_subscribe']:
         message = call.message
         user_id = message.chat.id
         if user_balance[user_id] >= float(call.data[4:]):
             user_balance[user_id] -= float(call.data[4:])
+            cursor.execute('''UPDATE Users SET balance = ? WHERE t_user_chat_id = ?''', user_balance[user_id], user_id)
+            conn.commit()
             bot.send_message(user_id, 'Подписка оформлена!\nВаш баланс:{}'.format(user_balance[user_id]))
             show_profile(user_id)
     elif call.data == 'profile':
@@ -189,4 +213,27 @@ def callback_inline(call):
         bot.answer_callback_query(call.id, text="Ошибка!")
 
 
+@bot.poll_handler
+def payment_handler(update):
+    print(150)
+    if update.type == 'payment':
+        invoice_payload = update.data['invoice_payload']
+        payment_id = update.data['payment_id']
+
+        payment_info = bot.getPayment(payment_id)
+        if payment_info['status'] == 'successful':
+            # Update user balance
+            user_id = payment_info['order_info']['user_id']
+            amount = payment_info['total_amount'] / 100  # Convert to rubles
+            user_balance[user_id] = round(user_balance[user_id] + float(amount), 2)
+
+            # Send confirmation message
+            bot.send_message(user_id, 'Платеж успешно обработан! Ваш баланс обновлен.')
+        else:
+            # Handle failed payment
+            bot.send_message(user_id, 'К сожалению, оплата не прошла. Пожалуйста, попробуйте снова.')
+
 bot.infinity_polling(skip_pending = True)
+cursor.close()
+print(1)
+conn.close()
