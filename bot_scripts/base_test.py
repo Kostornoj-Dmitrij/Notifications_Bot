@@ -28,9 +28,11 @@ cursor.execute('SELECT * FROM Users')
 results = cursor.fetchall()
 
 # Обработка результатов
+print(results[0])
 for row in results:
     print(row)
     print(row[0])
+    print(row[1])
 
 # Закрытие курсора
 cursor.close()

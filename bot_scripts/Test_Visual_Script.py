@@ -2,6 +2,15 @@ import telebot
 import pyodbc
 from telebot import types
 import requests
+from telebot import join_chat
+
+class User:
+    def __init__(self, user_id):
+        self.state = 'chat_start'
+        self.chat_name = ''
+        self.chat_link = ''
+        self.keywords = ''
+        self.user_id = user_id
 
 TOKEN = '6534454602:AAH7IlOdqFzRtXAZ2wffIOFpHYFTWdb7-1A'
 YOOTOKEN = '381764678:TEST:83858'
@@ -9,7 +18,7 @@ YOOTOKEN = '381764678:TEST:83858'
 bot = telebot.TeleBot(TOKEN)
 user_balance = {'user_id': 0}
 user_data = {}
-form = 'pdf'
+
 file_path = ''
 cost = 0.2
 current_message_number = 1
@@ -36,7 +45,8 @@ def start(message):
     username = message.chat.username
     cursor.execute('''SELECT * FROM Users WHERE username=?''', username)
     result = cursor.fetchone()
-
+    user = User(user_id)
+    user_data[user_id] = user
     if not result:
         user_balance[user_id] = float(1000)
         cursor.execute('''INSERT INTO Users (username, t_user_chat_id, balance) VALUES (?, ?, ?)''', username, user_id, user_balance[user_id])
@@ -50,6 +60,27 @@ def start(message):
                  types.InlineKeyboardButton('Мониторинг чатов', callback_data='chatsList'))
 
     bot.send_message(user_id, "Привет! Добро пожаловать в бота.", reply_markup=keyboard)
+
+@bot.message_handler(func=lambda message: user_data[message.chat.id].state == 'add_chat') 
+def add_chat_handler(message): 
+    user_data[message.chat.id].chat_name = message.text 
+    user_data[message.chat.id].state = 'add_link'
+    bot.send_message(message.chat.id, "Теперь введите ссылку на чат.")
+
+@bot.message_handler(func=lambda message: user_data[message.chat.id].state == 'add_link') 
+def add_link_handler(message): 
+    # Добавить ссылку в список чатов пользователя 
+    user_data[message.chat.id].chat_link = message.text
+    bot.join_chat(user_data[message.chat.id].chat_link)
+    try:
+        
+        bot.send_message(message.chat.id, f'Бот успешно присоединился к группе {user_data[message.chat.id].chat_link}')
+    except Exception as e:
+        bot.send_message(message.chat.id, f'Не удалось присоединить бота к группе: {e}')
+    
+    user_data[message.chat.id].state = 'add_keywords'
+    
+    bot.send_message(message.chat.id, "Теперь введите ключевые слова или фразы через запятую.")
 
 
 @bot.message_handler(func=lambda message: True)
@@ -141,6 +172,7 @@ def show_chats_info(user_id):
 @bot.callback_query_handler(func=lambda call: True)
 def callback_inline(call):
     user_id = call.message.chat.id
+    
     if call.data in ['100', '300', '500', '1000', '1500', '2000']:
         prices = [types.LabeledPrice(label='Руб', amount = int(call.data)*100)]
 
@@ -148,6 +180,7 @@ def callback_inline(call):
                          description='payment', invoice_payload='pay_add',
                          provider_token=YOOTOKEN, currency='RUB',
                          start_parameter='test_bot', prices=prices)
+        
     elif call.data in ['sub_100', 'sub_300', 'sub_450', 'sub_750', 'sub_0', 'other_subscribe']:
         message = call.message
         user_id = message.chat.id
@@ -157,58 +190,81 @@ def callback_inline(call):
             conn.commit()
             bot.send_message(user_id, 'Подписка оформлена!\nВаш баланс:{}'.format(user_balance[user_id]))
             show_profile(user_id)
+
     elif call.data == 'profile':
         show_profile(call.message.chat.id)
+
     elif call.data == 'pay':
         show_payment_options(call.message.chat.id)
+
     elif call.data == 'subscribe':
         show_subscribe_options(call.message.chat.id)
+
     elif call.data == 'info':
         show_bot_info(call.message.chat.id)
+
     elif call.data == 'stat':
         show_statistics(call.message.chat.id)
+
     elif call.data == 'support':
         show_support_options(call.message.chat.id)
+
     elif call.data == 'chats':
         show_chats_info(call.message.chat.id)
+
     elif call.data == 'addChat':
         keyboard = types.InlineKeyboardMarkup()
         keyboard.add(types.InlineKeyboardButton('Личный кабинет', callback_data='profile'))
-        bot.send_message(user_id, 'Отправьте ссылку на необходимый чат.', reply_markup=keyboard)
+        user_data[call.message.chat.id].state = 'add_chat'
+        bot.send_message(call.message.chat.id, "Введите название чата.")
     elif call.data == 'deleteChat':
         keyboard = types.InlineKeyboardMarkup()
         keyboard.row(types.InlineKeyboardButton('"Эмпатия машины"', callback_data='deleted_chat'))
         bot.send_message(user_id, 'Какой чат необходимо удалить?', reply_markup=keyboard)
+
     elif call.data == 'chatsList':
         keyboard = types.InlineKeyboardMarkup()
-        keyboard.row(types.InlineKeyboardButton('"Эмпатия машины"', callback_data='chat_info'))
+        cursor.execute('''SELECT * FROM Chats WHERE t_user_chat_id = ?''', user_id)
+        result = cursor.fetchall()
+        for row in result:
+            keyboard.row(types.InlineKeyboardButton(row[1], callback_data=f'chat_info|{row[0]}'))
         bot.send_message(user_id, 'Список чатов:', reply_markup=keyboard)
-    elif call.data == 'chat_info':
+
+    elif call.data.startswith('chat_info'):
+        chat_id = int(call.data.split('|')[1])
         keyboard = types.InlineKeyboardMarkup()
-        keyboard.row(types.InlineKeyboardButton('Список ключевых слов чата', callback_data='keywords_list'))
-        keyboard.row(types.InlineKeyboardButton('Добавить ключевые слова', callback_data='keywords_add'))
-        keyboard.row(types.InlineKeyboardButton('Удалить ключевые слова', callback_data='keywords_delete'))
-        keyboard.row(types.InlineKeyboardButton('Удалить ВСЕ ключевые слова', callback_data='all_keywords_delete'))
+        keyboard.row(types.InlineKeyboardButton('Список ключевых слов чата', callback_data=f'keywords_list|{chat_id}'))
+        keyboard.row(types.InlineKeyboardButton('Добавить ключевые слова', callback_data=f'keywords_add|{chat_id}'))
+        keyboard.row(types.InlineKeyboardButton('Удалить ключевые слова', callback_data=f'keywords_delete|{chat_id}'))
+        keyboard.row(types.InlineKeyboardButton('Удалить ВСЕ ключевые слова', callback_data=f'all_keywords_delete|{chat_id}'))
         bot.send_message(user_id, "Выберите действие:", reply_markup=keyboard)
+
     elif call.data == 'keywords_add':
         keyboard = types.InlineKeyboardMarkup()
         keyboard.add(types.InlineKeyboardButton('Личный кабинет', callback_data='profile'))
-        bot.send_message(user_id, "Введите ключевые слова или фразы через запятую.", reply_markup=keyboard)
+        bot.send_message(user_id, "Введите ключевые слова или фразы через ';'.", reply_markup=keyboard)
 
     elif call.data == 'keywords_delete':
         keyboard = types.InlineKeyboardMarkup()
         keyboard.add(types.InlineKeyboardButton('Личный кабинет', callback_data='profile'))
         bot.send_message(user_id, "Введите ключевые слова или фразы через запятую.", reply_markup=keyboard)
+
     elif call.data == 'all_keywords_delete':
         bot.send_message(user_id, "Все ключевые слова чата удалены.")
         show_profile(user_id)
-    elif call.data == 'keywords_list':
+
+    elif call.data.startswith('keywords_list'):
+        chat_id = int(call.data.split('|')[1])
+        cursor.execute('''SELECT * FROM Keywords WHERE chat_id = ?''', chat_id)
+        result = cursor.fetchone()
         keyboard = types.InlineKeyboardMarkup()
         keyboard.add(types.InlineKeyboardButton('Личный кабинет', callback_data='profile'))
-        bot.send_message(user_id, "Ключевые слова:\nкоммерческое", reply_markup=keyboard)
+        bot.send_message(user_id, f"Ключевые слова:\n{result[1]}", reply_markup=keyboard)
+
     elif call.data == 'deleted_chat':
         bot.send_message(user_id, "Чат был удалён.")
         show_profile(user_id)
+
     else:
         bot.answer_callback_query(call.id, text="Ошибка!")
 
