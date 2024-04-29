@@ -16,7 +16,7 @@ class User:
         self.chat_count = 0
 TOKEN = '6534454602:AAH7IlOdqFzRtXAZ2wffIOFpHYFTWdb7-1A'
 YOOTOKEN = '381764678:TEST:83858'
-
+keywords_list = ['привет,тестовое,погода,градусы']
 bot = telebot.TeleBot(TOKEN)
 user_balance = {'user_id': 0}
 user_data = {}
@@ -28,6 +28,7 @@ output_format = None
 images_folder = 'D:/Scanner/images'
 
 conn = pyodbc.connect(
+
     'driver={ODBC Driver 18 for SQL Server};'
     'Server=DESKTOP-BIV7UD0\SQLEXPRESS01;'
     'Database=notifications;'
@@ -37,6 +38,7 @@ conn = pyodbc.connect(
 
 
 cursor = conn.cursor()
+
 
 
 
@@ -145,10 +147,10 @@ def find_message(message, user_id):
     message_link = f"https://t.me/{message.chat.username}/{message.message_id}"
     chat_name = message.chat.title
     message_first_text = ' '.join(message_text.split()[:5])
-    keywords_list = ['привет']
+
     for keyword in keywords_list:
         if keyword in message_text:
-            bot.send_message(1390442427, f'"{chat_name}" пишет: "{message_first_text}..."\nСсылка на полное сообщение: {message_link}')
+            bot.send_message(user_id, f'"{chat_name}" пишет: "{message_first_text}..."\nСсылка на полное сообщение: {message_link}')
 
 
 def show_profile(user_id):
@@ -385,5 +387,4 @@ def payment_handler(update):
 
 bot.infinity_polling(skip_pending = True)
 cursor.close()
-print(1)
 conn.close()
