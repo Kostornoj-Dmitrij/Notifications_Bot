@@ -1,41 +1,10 @@
 import telebot
-import pyodbc
 from telebot import types
-import requests
-
-class User:
-    def __init__(self, user_id):
-        self.user_id = ''
-        self.state = 'chat_start'
-        self.chat_id = ''
-        self.chat_name = ''
-        self.chat_link = ''
-        self.keywords = ''
-        self.keywords_id = ''
-        self.t_user_id = user_id
-        self.callback = self
-        self.chat_count = 0
-TOKEN = '6534454602:AAH7IlOdqFzRtXAZ2wffIOFpHYFTWdb7-1A'
-YOOTOKEN = '381764678:TEST:83858'
-keywords_list = ['привет','тестовое','погода','градусы']
-bot = telebot.TeleBot(TOKEN)
-user_balance = {'user_id': 0}
-user_data = {}
-
-conn = pyodbc.connect(
-
-    'driver={ODBC Driver 18 for SQL Server};'
-    'Server=DESKTOP-BIV7UD0\SQLEXPRESS01;'
-    'Database=notifications;'
-    'Trusted_Connection=yes;'
-    'Encrypt=optional;'
-)
-
-cursor = conn.cursor()
-
-
-
-
+from config import TOKEN, YOOTOKEN, KEYWORDS_LIST
+from user import User
+from database import cursor, conn
+from main import bot, user_balance, user_data
+import utils
 
 @bot.message_handler(commands=['start'])
 def start(message):
@@ -61,6 +30,7 @@ def start(message):
     user_data[1390442427].chat_id = 1
     user_data[1390442427].user_id = 1
     user_data[1390442427].keywords_id = 1
+    print(user_data)
     bot.send_message(user_id, "Привет! Добро пожаловать в бота.", reply_markup=keyboard)
 
 @bot.message_handler(func=lambda message: user_data[message.chat.id].state == 'add_chat') 
@@ -79,7 +49,7 @@ def add_link_handler(message):
         bot.send_message(message.chat.id, f'Чат {user_data[message.chat.id].chat_name} успешно добавлен')
     except Exception as e:
         bot.send_message(message.chat.id, f'Не удалось присоединить бота к группе: {e}')
-    show_chats_info(message.chat.id)
+    utils.show_chats_info(message.chat.id)
 
 @bot.message_handler(func=lambda message: user_data[message.chat.id].state == 'add_keywords') 
 def add_keywords_handler(message):
@@ -120,104 +90,23 @@ def add_chat_handler(message):
 def handle_text(message):
     user_id = message.chat.id
     if message.text == '/profile':
-        show_profile(user_id)
+        utils.show_profile(user_id)
     elif message.text == '/pay':
-        show_payment_options(user_id)
+        utils.show_payment_options(user_id)
     elif message.text == '/subscribe':
-        show_subscribe_options(user_id)
+        utils.show_subscribe_options(user_id)
     elif message.text == '/support':
-        show_support_options(user_id)
+        utils.show_support_options(user_id)
     elif message.text == '/info':
-        show_bot_info(user_id)
+        utils.show_bot_info(user_id)
     elif message.text == '/stat':
-        show_statistics(user_id)
+        utils.show_statistics(user_id)
     elif message.text == '/chats':
-        show_chats_info(user_id)
+        utils.show_chats_info(user_id)
     elif message.text == '/test':
         bot.send_message(user_id, '"Эмпатия машины" пишет: "xAI опубликовала исходный код модели..."\nСсылка на полное сообщение: https://t.me/c/1948713469/106')
     else:
-        find_message(message, 1390442427)
-
-
-def show_profile(user_id):
-    balance = user_balance[user_id]
-    keyboard = types.InlineKeyboardMarkup()
-    keyboard.add(types.InlineKeyboardButton('О боте', callback_data='info'))
-    keyboard.add(types.InlineKeyboardButton('Статистика', callback_data='stat'))
-    keyboard.add(types.InlineKeyboardButton('Поддержка', callback_data='support'))
-    keyboard.add(types.InlineKeyboardButton('Список чатов', callback_data='chats'))
-    keyboard.add(types.InlineKeyboardButton('Пополнение баланса', callback_data='pay'))
-    keyboard.add(types.InlineKeyboardButton('Оформить подписку', callback_data='subscribe'))
-    bot.send_message(user_id, f"Ваш баланс: {balance} руб", reply_markup=keyboard)
-
-
-def show_payment_options(user_id):
-    keyboard = types.InlineKeyboardMarkup()
-    keyboard.row(types.InlineKeyboardButton('100 руб', callback_data='100'),
-                 types.InlineKeyboardButton('300 руб', callback_data='300'),
-                 types.InlineKeyboardButton('500 руб', callback_data='500'))
-    keyboard.row(types.InlineKeyboardButton('1000 руб', callback_data='1000'),
-                 types.InlineKeyboardButton('1500 руб', callback_data='1500'),
-                 types.InlineKeyboardButton('2000 руб', callback_data='2000'))
-    keyboard.row(types.InlineKeyboardButton('Отмена', callback_data='profile'))
-    bot.send_message(user_id, "Выберите сумму для пополнения:", reply_markup=keyboard)
-
-
-def show_subscribe_options(user_id):
-    keyboard = types.InlineKeyboardMarkup()
-    keyboard.row(types.InlineKeyboardButton('Фрилансер, 5 чатов, 100 руб/мес', callback_data='sub_100'))
-    keyboard.row(types.InlineKeyboardButton('Стандарт, 15 чатов, 300 руб/мес', callback_data='sub_300'))
-    keyboard.row(types.InlineKeyboardButton('Стартап, 25 чатов, 450 руб/мес', callback_data='sub_450'))
-    keyboard.row(types.InlineKeyboardButton('Компания, 50 чатов, 750 руб/мес', callback_data='sub_750'))
-    keyboard.row(types.InlineKeyboardButton('Бесплатный месяц', callback_data='sub_0'))
-    keyboard.row(types.InlineKeyboardButton('Тарифы на 3мес / 6 мес', callback_data='other_subscribe'))
-    keyboard.row(types.InlineKeyboardButton('Отмена', callback_data='profile'))
-    bot.send_message(user_id, "Выберите вариант подписки:", reply_markup=keyboard)
-
-
-def show_support_options(user_id):
-    keyboard = types.InlineKeyboardMarkup()
-    keyboard.add(types.InlineKeyboardButton('Написать в поддержку', url='https://www.google.com'))
-    keyboard.add(types.InlineKeyboardButton('Личный кабинет', callback_data='profile'))
-
-    bot.send_message(user_id, "Выберите действие:", reply_markup=keyboard)
-
-
-def show_bot_info(user_id):
-    keyboard = types.InlineKeyboardMarkup()
-    keyboard.add(types.InlineKeyboardButton('Личный кабинет', callback_data='profile'))
-    bot.send_message(user_id, "Это бот для уведомлений...", reply_markup=keyboard)
-
-
-def show_statistics(user_id):
-    keyboard = types.InlineKeyboardMarkup()
-    keyboard.add(types.InlineKeyboardButton('Личный кабинет', callback_data='profile'))
-    bot.send_message(user_id, "Статистика...", reply_markup=keyboard)
-
-
-def show_chats_info(user_id):
-    cursor.execute('SELECT COUNT(chat_id) FROM Chats WHERE t_user_chat_id = ?', (user_id))
-    user_data[user_id].chat_id = cursor.fetchone()[0]
-    keyboard = types.InlineKeyboardMarkup()
-    keyboard.row(types.InlineKeyboardButton('Список чатов', callback_data='chatsList'),
-                 types.InlineKeyboardButton('Добавить чат', callback_data='addChat'),
-                 types.InlineKeyboardButton('Удалить чат', callback_data='chatDeleteChoice'))
-    keyboard.row(types.InlineKeyboardButton('Личный кабинет', callback_data='profile'))
-    bot.send_message(user_id, f"Включенных в мониторинг чатов - {user_data[user_id].chat_id}", reply_markup=keyboard)
-
-def find_message(message, user_id):
-    message_text = message.text.lower()
-    message_link = f"https://t.me/{message.chat.username}/{message.message_id}"
-    chat_name = message.chat.title
-    message_first_text = ' '.join(message_text.split()[:5])
-    flag = False
-    for keyword in keywords_list:
-        if keyword in message_text:
-            flag = True
-    if flag:
-        bot.send_message(user_id, f'"{chat_name}" пишет: "{message_first_text}..."\nСсылка на полное сообщение: {message_link}')
-        cursor.execute('INSERT INTO FindMessages (t_message_link, keywords_id, chat_id, user_id, sender, first_text) VALUES (?, ?, ?, ?, ?, ?)', (message_link, user_data[user_id].keywords_id, user_data[user_id].chat_id, user_data[user_id].user_id, chat_name, message_first_text))
-        conn.commit()
+        utils.find_message(message, 1390442427)
 
 
 @bot.callback_query_handler(func=lambda call: True)
@@ -239,28 +128,28 @@ def callback_inline(call):
             cursor.execute('''UPDATE Users SET balance = ? WHERE t_user_chat_id = ?''', user_balance[user_id], user_id)
             conn.commit()
             bot.send_message(user_id, 'Подписка оформлена!\nВаш баланс:{}'.format(user_balance[user_id]))
-            show_profile(user_id)
+            utils.show_profile(user_id)
 
     elif call.data == 'profile':
-        show_profile(call.message.chat.id)
+        utils.show_profile(call.message.chat.id)
 
     elif call.data == 'pay':
-        show_payment_options(call.message.chat.id)
+        utils.show_payment_options(call.message.chat.id)
 
     elif call.data == 'subscribe':
-        show_subscribe_options(call.message.chat.id)
+        utils.show_subscribe_options(call.message.chat.id)
 
     elif call.data == 'info':
-        show_bot_info(call.message.chat.id)
+        utils.show_bot_info(call.message.chat.id)
 
     elif call.data == 'stat':
-        show_statistics(call.message.chat.id)
+        utils.show_statistics(call.message.chat.id)
 
     elif call.data == 'support':
-        show_support_options(call.message.chat.id)
+        utils.show_support_options(call.message.chat.id)
 
     elif call.data == 'chats':
-        show_chats_info(call.message.chat.id)
+        utils.show_chats_info(call.message.chat.id)
 
     elif call.data == 'addChat':
         keyboard = types.InlineKeyboardMarkup()
@@ -287,7 +176,7 @@ def callback_inline(call):
         cursor.execute('''DELETE FROM Chats WHERE chat_id = ?''', chat_id)
         conn.commit()
         bot.send_message(call.message.chat.id, "Чат был удалён.")
-        show_chats_info(call.message.chat.id)
+        utils.show_chats_info(call.message.chat.id)
     elif call.data == 'chatsList':
         
         user_data[call.message.chat.id].callback = call
@@ -360,7 +249,7 @@ def callback_inline(call):
             bot.send_message(user_id, "Чат пока не содержит ключевых слов для поиска.", reply_markup=keyboard)
     elif call.data == 'deleted_chat':
         bot.send_message(user_id, "Чат был удалён.")
-        show_profile(user_id)
+        utils.show_profile(user_id)
 
     else:
         bot.answer_callback_query(call.id, text="Ошибка!")
@@ -385,7 +274,4 @@ def payment_handler(update):
         else:
      
             bot.send_message(user_id, 'К сожалению, оплата не прошла. Пожалуйста, попробуйте снова.')
-
 bot.infinity_polling(skip_pending = True)
-cursor.close()
-conn.close()

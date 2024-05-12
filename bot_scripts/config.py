@@ -1,0 +1,3 @@
+TOKEN = '6534454602:AAH7IlOdqFzRtXAZ2wffIOFpHYFTWdb7-1A'
+YOOTOKEN = '381764678:TEST:83858'
+KEYWORDS_LIST = ['привет','тестовое','погода','градусы']
