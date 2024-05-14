@@ -1,3 +1,5 @@
+import sqlite3
+import shutil
 import telebot
 from telebot import types
 from config import TOKEN, YOOTOKEN, KEYWORDS_LIST
@@ -5,7 +7,7 @@ from user import User
 from database import cursor, conn
 from main import bot, user_balance, user_data
 import utils
-
+import kb
 @bot.message_handler(commands=['start'])
 def start(message):
     user_id = message.chat.id
@@ -23,14 +25,10 @@ def start(message):
     else:
         user_balance[user_id] = result[3]
 
-    keyboard = types.InlineKeyboardMarkup()
-
-    keyboard.row(types.InlineKeyboardButton('Личный кабинет', callback_data='profile'),
-                 types.InlineKeyboardButton('Мониторинг чатов', callback_data='chats'))
+    keyboard = kb.start_keyboard
     user_data[1390442427].chat_id = 1
     user_data[1390442427].user_id = 1
     user_data[1390442427].keywords_id = 1
-    print(user_data)
     bot.send_message(user_id, "Привет! Добро пожаловать в бота.", reply_markup=keyboard)
 
 @bot.message_handler(func=lambda message: user_data[message.chat.id].state == 'add_chat') 
@@ -43,8 +41,10 @@ def add_chat_handler(message):
 def add_link_handler(message): 
     
     user_data[message.chat.id].chat_link = message.text
+    new_chat_id = utils.get_group_id(user_data[message.chat.id].chat_link)
+    print(new_chat_id)
     try:
-        cursor.execute('''INSERT INTO Chats (chatname, chat_link, t_user_chat_id) VALUES (?, ?, ?)''', user_data[message.chat.id].chat_name, user_data[message.chat.id].chat_link, message.chat.id)
+        cursor.execute('''INSERT INTO Chats (chatname, chat_link, t_user_chat_id, t_chat_id) VALUES (?, ?, ?, ?)''', user_data[message.chat.id].chat_name, user_data[message.chat.id].chat_link, message.chat.id, new_chat_id)
         conn.commit()
         bot.send_message(message.chat.id, f'Чат {user_data[message.chat.id].chat_name} успешно добавлен')
     except Exception as e:
@@ -53,13 +53,13 @@ def add_link_handler(message):
 
 @bot.message_handler(func=lambda message: user_data[message.chat.id].state == 'add_keywords') 
 def add_keywords_handler(message):
-    user_data[message.chat.id].keywords = message.text.replace(' ,', ',').replace(', ', ',')
+    user_data[message.chat.id].keywords = (message.text.replace(' ,', ',').replace(', ', ',')).lower()
 
     cursor.execute('SELECT keywords FROM KeyWords WHERE chat_id = ? AND user_id = ?', (user_data[message.chat.id].chat_id, user_data[message.chat.id].user_id))
     existing_keywords = cursor.fetchone()
 
     if existing_keywords:
-        updated_keywords = existing_keywords[0] + ',' + user_data[message.chat.id].keywords
+        updated_keywords = (existing_keywords[0] + ',' + user_data[message.chat.id].keywords).lower()
         cursor.execute('UPDATE KeyWords SET keywords = ? WHERE chat_id = ? AND user_id = ?', (updated_keywords, user_data[message.chat.id].chat_id, user_data[message.chat.id].user_id))
     else:
         cursor.execute('INSERT INTO KeyWords (keywords, chat_id, user_id) VALUES (?, ?, ?)', (user_data[message.chat.id].keywords, user_data[message.chat.id].chat_id, user_data[message.chat.id].user_id))
@@ -73,12 +73,13 @@ def add_keywords_handler(message):
     callback_inline(callback)
 
 @bot.message_handler(func=lambda message: user_data[message.chat.id].state == 'keywords_delete') 
-def add_chat_handler(message): 
-    user_data[message.chat.id].keywords = message.text
+def updated_keywords_handler(message): 
+    user_data[message.chat.id].keywords = message.text.lower()
     
     keywords_list = user_data[message.chat.id].keywords.split(',')
     for keyword in keywords_list:
         cursor.execute("UPDATE KeyWords SET keywords = REPLACE(keywords, ?, '') WHERE user_id = ? AND chat_id = ?", (keyword + ',', user_data[message.chat.id].user_id, user_data[message.chat.id].chat_id))
+        cursor.execute("UPDATE KeyWords SET keywords = REPLACE(keywords, ?, '') WHERE user_id = ? AND chat_id = ?", (',' + keyword, user_data[message.chat.id].user_id, user_data[message.chat.id].chat_id))
     conn.commit()
     bot.send_message(message.chat.id, "Ключевые слова удалены.") 
     user_data[message.chat.id].state = 'chat_start'
@@ -106,7 +107,7 @@ def handle_text(message):
     elif message.text == '/test':
         bot.send_message(user_id, '"Эмпатия машины" пишет: "xAI опубликовала исходный код модели..."\nСсылка на полное сообщение: https://t.me/c/1948713469/106')
     else:
-        utils.find_message(message, 1390442427)
+        utils.find_message(message, user_id)
 
 
 @bot.callback_query_handler(func=lambda call: True)
@@ -152,27 +153,20 @@ def callback_inline(call):
         utils.show_chats_info(call.message.chat.id)
 
     elif call.data == 'addChat':
-        keyboard = types.InlineKeyboardMarkup()
-        keyboard.add(types.InlineKeyboardButton('Назад', callback_data='chats'))
+        keyboard = kb.chat_back_keyboard
         user_data[call.message.chat.id].state = 'add_chat'
         bot.send_message(call.message.chat.id, "Введите название чата.", reply_markup=keyboard)
 
     elif call.data == 'chatDeleteChoice':
-        
-        keyboard = types.InlineKeyboardMarkup()
         cursor.execute('''SELECT * FROM Chats WHERE t_user_chat_id = ?''', user_id)
         result = cursor.fetchall()
-        for row in result:
-            keyboard.row(types.InlineKeyboardButton(row[1], callback_data=f'deleteChat|{row[0]}'))
-        keyboard.add(types.InlineKeyboardButton('Назад', callback_data='chats'))
+        keyboard = kb.chat_delete_choice(result)
         bot.send_message(user_id, 'Список чатов:', reply_markup=keyboard)
     
     elif call.data.startswith('deleteChat'):
-        
         chat_id = int(call.data.split('|')[1])
+        keyboard = kb.chat_info_inline(call.data)
         
-        keyboard = types.InlineKeyboardMarkup()
-        keyboard.add(types.InlineKeyboardButton('Назад', callback_data=f'chat_info{call.data}'))
         cursor.execute('''DELETE FROM Chats WHERE chat_id = ?''', chat_id)
         conn.commit()
         bot.send_message(call.message.chat.id, "Чат был удалён.")
@@ -180,14 +174,9 @@ def callback_inline(call):
     elif call.data == 'chatsList':
         
         user_data[call.message.chat.id].callback = call
-        
-        keyboard = types.InlineKeyboardMarkup()
         cursor.execute('''SELECT * FROM Chats WHERE t_user_chat_id = ?''', user_id)
         result = cursor.fetchall()
-        for row in result:
-            keyboard.row(types.InlineKeyboardButton(row[1], callback_data=f'chat_info|{row[0]}'))
-        
-        keyboard.add(types.InlineKeyboardButton('Назад', callback_data='chats'))
+        keyboard = kb.chats_list(result)
         bot.send_message(user_id, 'Список чатов:', reply_markup=keyboard)
 
     elif call.data.startswith('chat_info'):
@@ -195,35 +184,26 @@ def callback_inline(call):
         user_data[call.message.chat.id].chat_id = int(call.data.split('|')[1])
         cursor.execute('SELECT * FROM Users WHERE t_user_chat_id = ?', call.message.chat.id)
         user_data[call.message.chat.id].user_id = cursor.fetchone()[0]
-        keyboard = types.InlineKeyboardMarkup()
-        keyboard.row(types.InlineKeyboardButton('Список ключевых слов чата', callback_data=f'keywords_list|{user_data[call.message.chat.id].chat_id}'))
-        keyboard.row(types.InlineKeyboardButton('Добавить ключевые слова', callback_data=f'keywords_add|{user_data[call.message.chat.id].chat_id}'))
-        keyboard.row(types.InlineKeyboardButton('Удалить ключевые слова', callback_data=f'keywords_delete|{user_data[call.message.chat.id].chat_id}'))
-        keyboard.row(types.InlineKeyboardButton('Удалить ВСЕ ключевые слова', callback_data=f'all_keywords_delete|{user_data[call.message.chat.id].chat_id}'))
-        keyboard.row(types.InlineKeyboardButton('Назад', callback_data='profile'))
+        keyboard = kb.chat_info(user_data[call.message.chat.id].chat_id)
         bot.send_message(user_id, "Выберите действие:", reply_markup=keyboard)
 
     elif call.data.startswith('keywords_add'):
         chat_id = int(call.data.split('|')[1])
         
-        keyboard = types.InlineKeyboardMarkup()
-        keyboard.add(types.InlineKeyboardButton('Отмена', callback_data='chatsList'))
+        keyboard = kb.keywords_back_keyboard
         user_data[call.message.chat.id].state = 'add_keywords'
         bot.send_message(call.message.chat.id, "Введите ключевые слова или фразы через запятую.", reply_markup=keyboard)
 
     elif call.data.startswith('keywords_delete'):
         chat_id = int(call.data.split('|')[1])
         
-        keyboard = types.InlineKeyboardMarkup()
-        keyboard.add(types.InlineKeyboardButton('Отмена', callback_data='chatsList'))
+        keyboard = kb.keywords_back_keyboard
         user_data[call.message.chat.id].state = 'keywords_delete'
         bot.send_message(call.message.chat.id, "Введите ключевые слова или фразы через запятую.", reply_markup=keyboard)
 
     elif call.data.startswith('all_keywords_delete'):
         user_data[call.message.chat.id].chat_id = int(call.data.split('|')[1])
-        keyboard = types.InlineKeyboardMarkup()
-        keyboard.row(types.InlineKeyboardButton('Да', callback_data=f'confirm_delete'))
-        keyboard.row(types.InlineKeyboardButton('Нет', callback_data=f'cancel_delete'))
+        keyboard = kb.all_keywords_delete_keyboard
         bot.send_message(user_id, "Вы уверены, что хотите удалить все ключевые слова для данного чата?", reply_markup=keyboard)
     elif call.data.startswith('confirm_delete'):
         cursor.execute("DELETE FROM KeyWords WHERE user_id = ? AND chat_id = ?", (user_data[call.message.chat.id].user_id, user_data[call.message.chat.id].chat_id))
@@ -239,18 +219,14 @@ def callback_inline(call):
         chat_id = int(call.data.split('|')[1])
         cursor.execute('''SELECT * FROM Keywords WHERE chat_id = ?''', chat_id)
         result = cursor.fetchone()
+        keyboard = kb.chat_info_inline(call.data)
         if result:
-            keyboard = types.InlineKeyboardMarkup()
-            keyboard.add(types.InlineKeyboardButton('Назад', callback_data=f'chat_info{call.data}'))
             bot.send_message(user_id, f"Ключевые слова:\n{result[1]}", reply_markup=keyboard)
         else:
-            keyboard = types.InlineKeyboardMarkup()
-            keyboard.add(types.InlineKeyboardButton('Назад', callback_data=f'chat_info{call.data}'))
             bot.send_message(user_id, "Чат пока не содержит ключевых слов для поиска.", reply_markup=keyboard)
     elif call.data == 'deleted_chat':
         bot.send_message(user_id, "Чат был удалён.")
         utils.show_profile(user_id)
-
     else:
         bot.answer_callback_query(call.id, text="Ошибка!")
 
@@ -274,4 +250,5 @@ def payment_handler(update):
         else:
      
             bot.send_message(user_id, 'К сожалению, оплата не прошла. Пожалуйста, попробуйте снова.')
+
 bot.infinity_polling(skip_pending = True)
