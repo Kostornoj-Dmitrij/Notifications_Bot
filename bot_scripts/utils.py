@@ -67,13 +67,13 @@ def find_message(message, chat_id):
         chat_link = ""
     cursor.execute('SELECT keywords_id, keywords, t_user_chat_id, k.chat_id, k.user_id FROM KeyWords k, Users u WHERE chat_id IN (SELECT chat_id FROM Chats WHERE chat_link = ?) AND k.user_id = u.user_id', chat_link)
     result = cursor.fetchall()
-    print(result)
     message_text = message.text.lower()
     message_link = f"https://t.me/{message.chat.username}/{message.message_id}"
     chat_name = message.chat.title
     message_first_text = ' '.join(message_text.split()[:5])
-    flag = False
+    
     for keywords in result:
+        flag = False
         keywords_list = keywords[1].split(',')
         for keyword in keywords_list:
             if keyword in message_text:

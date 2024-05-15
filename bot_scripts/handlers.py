@@ -8,6 +8,7 @@ from database import cursor, conn
 from main import bot, user_balance, user_data
 import utils
 import kb
+import requests
 @bot.message_handler(commands=['start'])
 def start(message):
     user_id = message.chat.id
@@ -26,9 +27,6 @@ def start(message):
         user_balance[user_id] = result[3]
 
     keyboard = kb.start_keyboard
-    user_data[1390442427].chat_id = 1
-    user_data[1390442427].user_id = 1
-    user_data[1390442427].keywords_id = 1
     bot.send_message(user_id, "Привет! Добро пожаловать в бота.", reply_markup=keyboard)
 
 @bot.message_handler(func=lambda message: user_data[message.chat.id].state == 'add_chat') 
@@ -42,7 +40,6 @@ def add_link_handler(message):
     
     user_data[message.chat.id].chat_link = message.text
     new_chat_id = utils.get_group_id(user_data[message.chat.id].chat_link)
-    print(new_chat_id)
     try:
         cursor.execute('''INSERT INTO Chats (chatname, chat_link, t_user_chat_id, t_chat_id) VALUES (?, ?, ?, ?)''', user_data[message.chat.id].chat_name, user_data[message.chat.id].chat_link, message.chat.id, new_chat_id)
         conn.commit()
@@ -250,5 +247,5 @@ def payment_handler(update):
         else:
      
             bot.send_message(user_id, 'К сожалению, оплата не прошла. Пожалуйста, попробуйте снова.')
-
+            
 bot.infinity_polling(skip_pending = True)
