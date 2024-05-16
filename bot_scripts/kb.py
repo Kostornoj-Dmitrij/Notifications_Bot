@@ -37,7 +37,7 @@ subscribe_keyboard.row(types.InlineKeyboardButton('Стандарт, 15 чато
 subscribe_keyboard.row(types.InlineKeyboardButton('Стартап, 25 чатов, 450 руб/мес', callback_data='sub_450'))
 subscribe_keyboard.row(types.InlineKeyboardButton('Компания, 50 чатов, 750 руб/мес', callback_data='sub_750'))
 subscribe_keyboard.row(types.InlineKeyboardButton('Бесплатный месяц', callback_data='sub_0'))
-subscribe_keyboard.row(types.InlineKeyboardButton('Тарифы на 3мес / 6 мес', callback_data='other_subscribe'))
+subscribe_keyboard.row(types.InlineKeyboardButton('Тарифы на 3 мес / 6 мес', callback_data='other_subscribe'))
 subscribe_keyboard.row(types.InlineKeyboardButton('Отмена', callback_data='profile'))
 
 support_keyboard = types.InlineKeyboardMarkup()

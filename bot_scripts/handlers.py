@@ -2,7 +2,7 @@ import sqlite3
 import shutil
 import telebot
 from telebot import types
-from config import TOKEN, YOOTOKEN, KEYWORDS_LIST
+from config import TOKEN, YOOTOKEN, sub_info
 from user import User
 from database import cursor, conn
 from main import bot, user_balance, user_data
@@ -10,6 +10,7 @@ import utils
 import kb
 import requests
 @bot.message_handler(commands=['start'])
+@bot.channel_post_handler(commands=['start'])
 def start(message):
     user_id = message.chat.id
     username = message.chat.username
@@ -29,26 +30,29 @@ def start(message):
     keyboard = kb.start_keyboard
     bot.send_message(user_id, "Привет! Добро пожаловать в бота.", reply_markup=keyboard)
 
-@bot.message_handler(func=lambda message: user_data[message.chat.id].state == 'add_chat') 
+@bot.message_handler(func=lambda message: user_data[message.chat.id].state == 'add_chat')
+@bot.channel_post_handler(func=lambda message: user_data[message.chat.id].state == 'add_chat')
 def add_chat_handler(message): 
     user_data[message.chat.id].chat_name = message.text 
     user_data[message.chat.id].state = 'add_link'
     bot.send_message(message.chat.id, "Теперь введите ссылку на чат.")
 
-@bot.message_handler(func=lambda message: user_data[message.chat.id].state == 'add_link') 
+@bot.message_handler(func=lambda message: user_data[message.chat.id].state == 'add_link')
+@bot.channel_post_handler(func=lambda message: user_data[message.chat.id].state == 'add_link')
 def add_link_handler(message): 
     
     user_data[message.chat.id].chat_link = message.text
     new_chat_id = utils.get_group_id(user_data[message.chat.id].chat_link)
-    try:
+    if new_chat_id != 0:
         cursor.execute('''INSERT INTO Chats (chatname, chat_link, t_user_chat_id, t_chat_id) VALUES (?, ?, ?, ?)''', user_data[message.chat.id].chat_name, user_data[message.chat.id].chat_link, message.chat.id, new_chat_id)
         conn.commit()
         bot.send_message(message.chat.id, f'Чат {user_data[message.chat.id].chat_name} успешно добавлен')
-    except Exception as e:
-        bot.send_message(message.chat.id, f'Не удалось присоединить бота к группе: {e}')
+    else:
+        bot.send_message(message.chat.id, f'Не удалось присоединить бота к группе - неверная ссылка!')
     utils.show_chats_info(message.chat.id)
 
 @bot.message_handler(func=lambda message: user_data[message.chat.id].state == 'add_keywords') 
+@bot.channel_post_handler(func=lambda message: user_data[message.chat.id].state == 'add_keywords') 
 def add_keywords_handler(message):
     user_data[message.chat.id].keywords = (message.text.replace(' ,', ',').replace(', ', ',')).lower()
 
@@ -70,6 +74,7 @@ def add_keywords_handler(message):
     callback_inline(callback)
 
 @bot.message_handler(func=lambda message: user_data[message.chat.id].state == 'keywords_delete') 
+@bot.channel_post_handler(func=lambda message: user_data[message.chat.id].state == 'keywords_delete') 
 def updated_keywords_handler(message): 
     user_data[message.chat.id].keywords = message.text.lower()
     
@@ -85,6 +90,7 @@ def updated_keywords_handler(message):
     callback_inline(callback)
 
 @bot.message_handler(func=lambda message: True)
+@bot.channel_post_handler(func=lambda message: True)
 def handle_text(message):
     user_id = message.chat.id
     if message.text == '/profile':
@@ -101,8 +107,6 @@ def handle_text(message):
         utils.show_statistics(user_id)
     elif message.text == '/chats':
         utils.show_chats_info(user_id)
-    elif message.text == '/test':
-        bot.send_message(user_id, '"Эмпатия машины" пишет: "xAI опубликовала исходный код модели..."\nСсылка на полное сообщение: https://t.me/c/1948713469/106')
     else:
         utils.find_message(message, user_id)
 
@@ -121,13 +125,20 @@ def callback_inline(call):
     elif call.data in ['sub_100', 'sub_300', 'sub_450', 'sub_750', 'sub_0', 'other_subscribe']:
         message = call.message
         user_id = message.chat.id
-        if user_balance[user_id] >= float(call.data[4:]):
-            user_balance[user_id] -= float(call.data[4:])
-            cursor.execute('''UPDATE Users SET balance = ? WHERE t_user_chat_id = ?''', user_balance[user_id], user_id)
+        sub_info_list = sub_info[call.data]
+        if user_balance[user_id] >= float(sub_info_list[0]):
+            user_balance[user_id] -= float(sub_info_list[0])
+            cursor.execute('UPDATE Users SET balance = ? WHERE t_user_chat_id = ?', user_balance[user_id], user_id)
+            
+            cursor.execute('UPDATE Users SET sub_start = GETDATE() WHERE t_user_chat_id = ?', user_id)
+            cursor.execute('UPDATE Users SET sub_duration = ? WHERE t_user_chat_id = ?', 31, user_id)
+            cursor.execute('UPDATE Users SET chats_constraint = ? WHERE t_user_chat_id = ?', sub_info_list[1], user_id)
             conn.commit()
-            bot.send_message(user_id, 'Подписка оформлена!\nВаш баланс:{}'.format(user_balance[user_id]))
+            bot.send_message(user_id, f'Подписка оформлена!\nВаш баланс:{user_balance[user_id]}')
             utils.show_profile(user_id)
-
+        else:
+            bot.send_message(user_id, 'На балансе недостаточно средств!')
+            utils.show_profile(user_id)
     elif call.data == 'profile':
         utils.show_profile(call.message.chat.id)
 
@@ -150,9 +161,16 @@ def callback_inline(call):
         utils.show_chats_info(call.message.chat.id)
 
     elif call.data == 'addChat':
-        keyboard = kb.chat_back_keyboard
-        user_data[call.message.chat.id].state = 'add_chat'
-        bot.send_message(call.message.chat.id, "Введите название чата.", reply_markup=keyboard)
+        cursor.execute('SELECT chats_constraint FROM Users WHERE t_user_chat_id = ?', call.message.chat.id)
+        chats_constraint = cursor.fetchone()[0]
+        cursor.execute('SELECT COUNT(*) FROM Chats WHERE t_user_chat_id = ?', call.message.chat.id)
+        chats_count = cursor.fetchone()[0]
+        if chats_count < chats_constraint:
+            keyboard = kb.chat_back_keyboard
+            user_data[call.message.chat.id].state = 'add_chat'
+            bot.send_message(call.message.chat.id, "Введите название чата.", reply_markup=keyboard)
+        else:
+            bot.send_message(call.message.chat.id, "Достигнуто максимальное количество чатов для мониторинга. Повысьте уровень подписки или удалите часть чатов.")
 
     elif call.data == 'chatDeleteChoice':
         cursor.execute('''SELECT * FROM Chats WHERE t_user_chat_id = ?''', user_id)
@@ -228,24 +246,25 @@ def callback_inline(call):
         bot.answer_callback_query(call.id, text="Ошибка!")
 
 
-@bot.poll_handler
-def payment_handler(update):
+@bot.shipping_query_handler(func=lambda query: True)
+def shipping(shipping_query):
+    bot.answer_shipping_query(shipping_query.id, ok=True,
+                              error_message='Произошла ошибка.')
 
-    if update.type == 'payment':
-        invoice_payload = update.data['invoice_payload']
-        payment_id = update.data['payment_id']
 
-        payment_info = bot.getPayment(payment_id)
-        if payment_info['status'] == 'successful':
-            
-            user_id = payment_info['order_info']['user_id']
-            amount = payment_info['total_amount'] / 100 
-            user_balance[user_id] = round(user_balance[user_id] + float(amount), 2)
+@bot.pre_checkout_query_handler(func=lambda query: True)
+def checkout(pre_checkout_query):
+    bot.answer_pre_checkout_query(pre_checkout_query.id, ok=True,
+                                  error_message="Произошла ошибка.")
 
-           
-            bot.send_message(user_id, 'Платеж успешно обработан! Ваш баланс обновлен.')
-        else:
-     
-            bot.send_message(user_id, 'К сожалению, оплата не прошла. Пожалуйста, попробуйте снова.')
+
+@bot.message_handler(content_types=['successful_payment'])
+def got_payment(message):
+    amount = message.successful_payment.total_amount / 100
+    user_balance[message.chat.id] = round(user_balance[message.chat.id] + float(amount), 2)
+    cursor.execute('UPDATE Users SET balance = ROUND(balance + ?, 0) WHERE t_user_chat_id = ?', amount, message.chat.id)
+    conn.commit()
+    bot.send_message(message.chat.id, f'Баланс был пополнен на {message.successful_payment.total_amount / 100} {message.successful_payment.currency}.')
+    utils.show_profile(message.chat.id)
             
 bot.infinity_polling(skip_pending = True)
