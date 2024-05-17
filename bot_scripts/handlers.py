@@ -1,6 +1,3 @@
-import sqlite3
-import shutil
-import telebot
 from telebot import types
 from config import TOKEN, YOOTOKEN, sub_info
 from user import User
@@ -8,7 +5,8 @@ from database import cursor, conn
 from main import bot, user_balance, user_data
 import utils
 import kb
-import requests
+
+
 @bot.message_handler(commands=['start'])
 @bot.channel_post_handler(commands=['start'])
 def start(message):
@@ -30,12 +28,14 @@ def start(message):
     keyboard = kb.start_keyboard
     bot.send_message(user_id, "Привет! Добро пожаловать в бота.", reply_markup=keyboard)
 
+
 @bot.message_handler(func=lambda message: user_data[message.chat.id].state == 'add_chat')
 @bot.channel_post_handler(func=lambda message: user_data[message.chat.id].state == 'add_chat')
 def add_chat_handler(message): 
     user_data[message.chat.id].chat_name = message.text 
     user_data[message.chat.id].state = 'add_link'
     bot.send_message(message.chat.id, "Теперь введите ссылку на чат.")
+
 
 @bot.message_handler(func=lambda message: user_data[message.chat.id].state == 'add_link')
 @bot.channel_post_handler(func=lambda message: user_data[message.chat.id].state == 'add_link')
@@ -50,6 +50,7 @@ def add_link_handler(message):
     else:
         bot.send_message(message.chat.id, f'Не удалось присоединить бота к группе - неверная ссылка!')
     utils.show_chats_info(message.chat.id)
+
 
 @bot.message_handler(func=lambda message: user_data[message.chat.id].state == 'add_keywords') 
 @bot.channel_post_handler(func=lambda message: user_data[message.chat.id].state == 'add_keywords') 
@@ -73,6 +74,7 @@ def add_keywords_handler(message):
     callback.data = f'chat_info|{user_data[message.chat.id].chat_id}'
     callback_inline(callback)
 
+
 @bot.message_handler(func=lambda message: user_data[message.chat.id].state == 'keywords_delete') 
 @bot.channel_post_handler(func=lambda message: user_data[message.chat.id].state == 'keywords_delete') 
 def updated_keywords_handler(message): 
@@ -88,6 +90,7 @@ def updated_keywords_handler(message):
     callback = user_data[message.chat.id].callback
     callback.data = f'chat_info|{user_data[message.chat.id].chat_id}'
     callback_inline(callback)
+
 
 @bot.message_handler(func=lambda message: True)
 @bot.channel_post_handler(func=lambda message: True)
@@ -266,5 +269,6 @@ def got_payment(message):
     conn.commit()
     bot.send_message(message.chat.id, f'Баланс был пополнен на {message.successful_payment.total_amount / 100} {message.successful_payment.currency}.')
     utils.show_profile(message.chat.id)
+     
             
 bot.infinity_polling(skip_pending = True)

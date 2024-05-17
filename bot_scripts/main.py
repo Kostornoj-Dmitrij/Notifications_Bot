@@ -1,7 +1,4 @@
 import telebot
-from telebot import types
-import pyodbc
-import config
 from config import TOKEN, YOOTOKEN
 
 bot = telebot.TeleBot(TOKEN)

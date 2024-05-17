@@ -1,11 +1,10 @@
-import telebot
-from telebot import types
 from main import bot, user_balance, user_data
 from database import cursor, conn
 from config import TOKEN
 import kb
 import re
 import requests
+
 
 def plural_words(n, words):
     if n % 10 > 4 or n % 10 == 0 or 11 < n < 15:
@@ -14,6 +13,7 @@ def plural_words(n, words):
         return words[0]
     return words[1]     
     
+
 def show_profile(user_id):
     cursor.execute('SELECT DATEDIFF(day, GETDATE(), DATEADD(day, sub_duration, sub_start)) FROM Users WHERE t_user_chat_id = ?', user_id)
     time_left = cursor.fetchone()[0]
@@ -22,6 +22,7 @@ def show_profile(user_id):
     balance = user_balance[user_id]
     keyboard = kb.profile_keyboard
     bot.send_message(user_id, f"Подписка {sub_status}\nВаш баланс: {balance} руб", reply_markup=keyboard)
+
 
 def show_payment_options(user_id):
     keyboard = kb.payment_keyboard
@@ -55,11 +56,13 @@ def show_statistics(user_id):
     keyboard = kb.profile_back_keyboard
     bot.send_message(user_id, f"Статистика:\nКоличество найденных сообщений за время работы - {count_messages}", reply_markup=keyboard)
 
+
 def show_chats_info(user_id):
     cursor.execute('SELECT COUNT(chat_id) FROM Chats WHERE t_user_chat_id = ?', (user_id))
     user_data[user_id].chat_id = cursor.fetchone()[0]
     keyboard = kb.all_chats_info_keyboard
     bot.send_message(user_id, f"Включенных в мониторинг чатов - {user_data[user_id].chat_id}", reply_markup=keyboard)
+
 
 def get_group_id(link):
     match = re.search(r"https://t.me/([\w\d_-]+)", link)
@@ -72,6 +75,7 @@ def get_group_id(link):
             return data["result"]["id"]
     else:
         return 0
+
 
 def find_message(message, chat_id):
     url = f"https://api.telegram.org/bot{TOKEN}/getChat?chat_id={chat_id}"
@@ -106,4 +110,3 @@ def find_message(message, chat_id):
                 cursor.execute('UPDATE Users SET count_messages = count_messages + 1 WHERE t_user_chat_id = ?', keywords[2])
                 conn.commit()
 
-   
