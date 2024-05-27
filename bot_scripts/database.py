@@ -1,12 +1,7 @@
-import pyodbc
+import sqlite3
 
-conn = pyodbc.connect(
+dbfile = 'data\database.db'
 
-    'driver={ODBC Driver 18 for SQL Server};'
-    'Server=DESKTOP-BIV7UD0\SQLEXPRESS01;'
-    'Database=notifications;'
-    'Trusted_Connection=yes;'
-    'Encrypt=optional;'
-)
+conn = sqlite3.connect(dbfile, check_same_thread=False)
 
 cursor = conn.cursor()

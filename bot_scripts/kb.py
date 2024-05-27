@@ -1,4 +1,4 @@
-from telebot import types
+from aiogram import types
 
 chat_back_keyboard = types.InlineKeyboardMarkup()
 chat_back_keyboard.add(types.InlineKeyboardButton('Назад', callback_data='chats'))
