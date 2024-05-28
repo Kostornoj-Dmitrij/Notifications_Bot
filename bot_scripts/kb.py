@@ -79,5 +79,5 @@ def chat_info(chat_id):
     chat_info_keyboard.row(types.InlineKeyboardButton('Добавить ключевые слова', callback_data=f'keywords_add|{chat_id}'))
     chat_info_keyboard.row(types.InlineKeyboardButton('Удалить ключевые слова', callback_data=f'keywords_delete|{chat_id}'))
     chat_info_keyboard.row(types.InlineKeyboardButton('Удалить ВСЕ ключевые слова', callback_data=f'all_keywords_delete|{chat_id}'))
-    chat_info_keyboard.row(types.InlineKeyboardButton('Назад', callback_data='profile'))
+    chat_info_keyboard.row(types.InlineKeyboardButton('Назад', callback_data='chatsList'))
     return chat_info_keyboard

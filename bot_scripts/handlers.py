@@ -1,5 +1,4 @@
-from telebot import types
-from config import TOKEN, YOOTOKEN, sub_info
+from config import TOKEN, YOOTOKEN, sub_info, api_id, api_hash
 from user import User
 from database import cursor, conn
 from main import bot, user_balance, user_data, dp
@@ -11,7 +10,6 @@ from telethon.tl.functions.messages import GetHistoryRequest
 import sys
 from aiogram import types
 import signal
-
 
 @dp.message_handler(commands=['start'])
 async def start(message:types.Message):
@@ -33,28 +31,22 @@ async def start(message:types.Message):
     keyboard = kb.start_keyboard
     await bot.send_message(message.chat.id, "Привет! Добро пожаловать в бота.", reply_markup=keyboard)
 
-
 @dp.message_handler(lambda message: user_data[message.chat.id].state == 'add_chat')
-async def add_chat_handler(message): 
-    user_data[message.chat.id].chat_name = message.text 
-    user_data[message.chat.id].state = 'add_link'
-    await bot.send_message(message.chat.id, "Теперь введите ссылку на чат.")
-
-
-@dp.message_handler(lambda message: user_data[message.chat.id].state == 'add_link')
 async def add_link_handler(message): 
-    
     user_data[message.chat.id].chat_link = message.text
+    await bot.delete_message(chat_id=message.chat.id, message_id=(message.message_id-1))
     if user_data[message.chat.id].chat_link[0] == '@':
         user_data[message.chat.id].chat_link = 'https://t.me/' + user_data[message.chat.id].chat_link[1:]
+    user_data[message.chat.id].chat_name = user_data[message.chat.id].chat_link.replace('@', '').replace('https://t.me/', '')   
     new_chat_id = utils.get_group_id(user_data[message.chat.id].chat_link)
     if new_chat_id != 0:
-        cursor.execute('''INSERT INTO Chats (chatname, chat_link, t_user_chat_id) VALUES (?, ?, ?)''', (user_data[message.chat.id].chat_name, user_data[message.chat.id].chat_link, message.chat.id, ))
+        cursor.execute('''INSERT INTO Chats (chatname, chat_link, t_user_chat_id, lastMessage) VALUES (?, ?, ?, ?)''', (user_data[message.chat.id].chat_name, user_data[message.chat.id].chat_link, message.chat.id, 0,))
         conn.commit()
         await bot.send_message(message.chat.id, f'Чат {user_data[message.chat.id].chat_name} успешно добавлен')
     else:
         await bot.send_message(message.chat.id, f'Не удалось присоединить бота к группе - неверная ссылка!')
-
+    
+    
     await utils.show_chats_info(message.chat.id)
 
 
@@ -71,9 +63,10 @@ async def add_keywords_handler(message):
     else:
         cursor.execute('INSERT INTO KeyWords (keywords, chat_id, user_id) VALUES (?, ?, ?)', (user_data[message.chat.id].keywords, user_data[message.chat.id].chat_id, user_data[message.chat.id].user_id,))
     
-    conn.commit() 
-     
-    await bot.send_message(message.chat.id, "Ключевые слова добавлены.") 
+    conn.commit()
+    await bot.delete_message(chat_id=message.chat.id, message_id=(message.message_id - 1))
+    await bot.send_message(message.chat.id, "Ключевые слова добавлены.")
+    
     user_data[message.chat.id].state = 'chat_start'
     callback = user_data[message.chat.id].callback
     callback.data = f'chat_info|{user_data[message.chat.id].chat_id}'
@@ -89,6 +82,7 @@ async def updated_keywords_handler(message):
         cursor.execute("UPDATE KeyWords SET keywords = REPLACE(keywords, ?, '') WHERE user_id = ? AND chat_id = ?", (keyword + ',', user_data[message.chat.id].user_id, user_data[message.chat.id].chat_id,))
         cursor.execute("UPDATE KeyWords SET keywords = REPLACE(keywords, ?, '') WHERE user_id = ? AND chat_id = ?", (',' + keyword, user_data[message.chat.id].user_id, user_data[message.chat.id].chat_id,))
     conn.commit()
+    await bot.delete_message(chat_id=message.chat.id, message_id=(message.message_id - 1))
     await bot.send_message(message.chat.id, "Ключевые слова удалены.") 
     user_data[message.chat.id].state = 'chat_start'
     callback = user_data[message.chat.id].callback
@@ -122,13 +116,14 @@ async def callback_inline(call: types.CallbackQuery):
     user_id = call.message.chat.id
     if call.data in ['100', '300', '500', '1000', '1500', '2000']:
         prices = [types.LabeledPrice(label='Руб', amount = int(call.data)*100)]
-
+        await bot.delete_message(chat_id=call.message.chat.id, message_id=(call.message.message_id))
         await bot.send_invoice(call.message.chat.id, title='Пополнение баланса',
-                         description='payment', invoice_payload='pay_add',
+                         description='payment',
                          provider_token=YOOTOKEN, currency='RUB',
-                         start_parameter='test_bot', prices=prices)
+                         start_parameter='test_bot', prices=prices, payload='test-invoice-payload')
         
     elif call.data in ['sub_100', 'sub_300', 'sub_450', 'sub_750', 'sub_0', 'other_subscribe']:
+        await bot.delete_message(chat_id=call.message.chat.id, message_id=(call.message.message_id))
         message = call.message
         user_id = message.chat.id
         sub_info_list = sub_info[call.data]
@@ -140,51 +135,64 @@ async def callback_inline(call: types.CallbackQuery):
             cursor.execute('UPDATE Users SET sub_duration = ? WHERE t_user_chat_id = ?', (31, user_id,))
             cursor.execute('UPDATE Users SET chats_constraint = ? WHERE t_user_chat_id = ?', (sub_info_list[1], user_id,))
             conn.commit()
+            
             await bot.send_message(user_id, f'Подписка оформлена!\nВаш баланс:{user_balance[user_id]}')
             await utils.show_profile(user_id)
         else:
             await bot.send_message(user_id, 'На балансе недостаточно средств!')
             await utils.show_profile(user_id)
     elif call.data == 'profile':
+        await bot.delete_message(chat_id=call.message.chat.id, message_id=(call.message.message_id))
         await utils.show_profile(call.message.chat.id)
 
     elif call.data == 'pay':
+        await bot.delete_message(chat_id=call.message.chat.id, message_id=(call.message.message_id))
         await utils.show_payment_options(call.message.chat.id)
 
     elif call.data == 'subscribe':
+        await bot.delete_message(chat_id=call.message.chat.id, message_id=(call.message.message_id))
         await utils.show_subscribe_options(call.message.chat.id)
 
     elif call.data == 'info':
+        await bot.delete_message(chat_id=call.message.chat.id, message_id=(call.message.message_id))
         await utils.show_bot_info(call.message.chat.id)
 
     elif call.data == 'stat':
+        await bot.delete_message(chat_id=call.message.chat.id, message_id=(call.message.message_id))
         await utils.show_statistics(call.message.chat.id)
 
     elif call.data == 'support':
+        await bot.delete_message(chat_id=call.message.chat.id, message_id=(call.message.message_id))
         await utils.show_support_options(call.message.chat.id)
 
     elif call.data == 'chats':
+        await bot.delete_message(chat_id=call.message.chat.id, message_id=(call.message.message_id))
         await utils.show_chats_info(call.message.chat.id)
 
     elif call.data == 'addChat':
+        
         cursor.execute('SELECT chats_constraint FROM Users WHERE t_user_chat_id = ?', (call.message.chat.id,))
         chats_constraint = cursor.fetchone()[0]
         cursor.execute('SELECT COUNT(*) FROM Chats WHERE t_user_chat_id = ?', (call.message.chat.id,))
         chats_count = cursor.fetchone()[0]
         if chats_count < chats_constraint:
+            await bot.delete_message(chat_id=call.message.chat.id, message_id=(call.message.message_id))
             keyboard = kb.chat_back_keyboard
             user_data[call.message.chat.id].state = 'add_chat'
-            await bot.send_message(call.message.chat.id, "Введите название чата.", reply_markup=keyboard)
+            await bot.send_message(call.message.chat.id, "Введите ссылку или id чата.", reply_markup=keyboard)
         else:
             await bot.send_message(call.message.chat.id, "Достигнуто максимальное количество чатов для мониторинга. Повысьте уровень подписки или удалите часть чатов.")
-
+            call.data = 'chats'
+            await callback_inline(call)
     elif call.data == 'chatDeleteChoice':
+        await bot.delete_message(chat_id=call.message.chat.id, message_id=(call.message.message_id))
         cursor.execute('''SELECT * FROM Chats WHERE t_user_chat_id = ?''', (user_id,))
         result = cursor.fetchall()
         keyboard = kb.chat_delete_choice(result)
         await bot.send_message(user_id, 'Список чатов:', reply_markup=keyboard)
     
     elif call.data.startswith('deleteChat'):
+        await bot.delete_message(chat_id=call.message.chat.id, message_id=(call.message.message_id))
         chat_id = int(call.data.split('|')[1])
         keyboard = kb.chat_info_inline(call.data)
         
@@ -193,7 +201,7 @@ async def callback_inline(call: types.CallbackQuery):
         await bot.send_message(call.message.chat.id, "Чат был удалён.")
         await utils.show_chats_info(call.message.chat.id)
     elif call.data == 'chatsList':
-        
+        await bot.delete_message(chat_id=call.message.chat.id, message_id=(call.message.message_id))
         user_data[call.message.chat.id].callback = call
         cursor.execute('''SELECT * FROM Chats WHERE t_user_chat_id = ?''', (user_id,))
         result = cursor.fetchall()
@@ -201,7 +209,10 @@ async def callback_inline(call: types.CallbackQuery):
         await bot.send_message(user_id, 'Список чатов:', reply_markup=keyboard)
 
     elif call.data.startswith('chat_info'):
-        
+        try:
+            await bot.delete_message(chat_id=call.message.chat.id, message_id=(call.message.message_id))
+        except:
+            pass
         user_data[call.message.chat.id].chat_id = int(call.data.split('|')[1])
         cursor.execute('SELECT * FROM Users WHERE t_user_chat_id = ?', (call.message.chat.id,))
         user_data[call.message.chat.id].user_id = cursor.fetchone()[0]
@@ -209,6 +220,7 @@ async def callback_inline(call: types.CallbackQuery):
         await bot.send_message(user_id, "Выберите действие:", reply_markup=keyboard)
 
     elif call.data.startswith('keywords_add'):
+        await bot.delete_message(chat_id=call.message.chat.id, message_id=(call.message.message_id))
         chat_id = int(call.data.split('|')[1])
         
         keyboard = kb.keywords_back_keyboard
@@ -216,6 +228,7 @@ async def callback_inline(call: types.CallbackQuery):
         await bot.send_message(call.message.chat.id, "Введите ключевые слова или фразы через запятую.", reply_markup=keyboard)
 
     elif call.data.startswith('keywords_delete'):
+        await bot.delete_message(chat_id=call.message.chat.id, message_id=(call.message.message_id))
         chat_id = int(call.data.split('|')[1])
         
         keyboard = kb.keywords_back_keyboard
@@ -223,6 +236,7 @@ async def callback_inline(call: types.CallbackQuery):
         await bot.send_message(call.message.chat.id, "Введите ключевые слова или фразы через запятую.", reply_markup=keyboard)
 
     elif call.data.startswith('all_keywords_delete'):
+        await bot.delete_message(chat_id=call.message.chat.id, message_id=(call.message.message_id))
         user_data[call.message.chat.id].chat_id = int(call.data.split('|')[1])
         keyboard = kb.all_keywords_delete_keyboard
         await bot.send_message(user_id, "Вы уверены, что хотите удалить все ключевые слова для данного чата?", reply_markup=keyboard)
@@ -237,6 +251,7 @@ async def callback_inline(call: types.CallbackQuery):
         call.data = 'chatsList' 
         await callback_inline(call)
     elif call.data.startswith('keywords_list'):
+        await bot.delete_message(chat_id=call.message.chat.id, message_id=(call.message.message_id))
         chat_id = int(call.data.split('|')[1])
         cursor.execute('''SELECT * FROM Keywords WHERE chat_id = ?''', (chat_id,))
         result = cursor.fetchone()
@@ -246,6 +261,7 @@ async def callback_inline(call: types.CallbackQuery):
         else:
             await bot.send_message(user_id, "Чат пока не содержит ключевых слов для поиска.", reply_markup=keyboard)
     elif call.data == 'deleted_chat':
+        await bot.delete_message(chat_id=call.message.chat.id, message_id=(call.message.message_id))
         await bot.send_message(user_id, "Чат был удалён.")
         await utils.show_profile(user_id)
     else:
@@ -271,7 +287,7 @@ async def got_payment(message):
     cursor.execute('UPDATE Users SET balance = ROUND(balance + ?, 0) WHERE t_user_chat_id = ?', (amount, message.chat.id,))
     conn.commit()
     await bot.send_message(message.chat.id, f'Баланс был пополнен на {message.successful_payment.total_amount / 100} {message.successful_payment.currency}.')
-    utils.show_profile(message.chat.id)
+    await utils.show_profile(message.chat.id)
 
 
     
@@ -284,8 +300,11 @@ async def monitoring():
         for link in links:
             chat_link = link[0]
             cursor.execute('SELECT lastMessage FROM Chats WHERE chat_link = ?', (chat_link,))
-            lastMessage = cursor.fetchall()[0]
-            lastMessage = lastMessage[0]
+            
+            lastMessage = cursor.fetchall()
+            if lastMessage == []: 
+                continue
+            lastMessage = lastMessage[0][0]
             entity = await client.get_entity(chat_link)
             cursor.execute('SELECT keywords_id, keywords, t_user_chat_id, k.chat_id, k.user_id FROM KeyWords k, Users u WHERE chat_id IN (SELECT chat_id FROM Chats WHERE chat_link = ?) AND k.user_id = u.user_id', (chat_link,))
             result = cursor.fetchall()
@@ -347,8 +366,6 @@ async def main():
     
     await asyncio.gather(bot_polling_task, async_func_task)
 
-api_id = 25343481
-api_hash = "1b9b1920da970fe963043d31382bdf5c"
 
 client = TelegramClient('anon2', api_id, api_hash)
 
